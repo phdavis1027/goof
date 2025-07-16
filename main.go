@@ -51,6 +51,16 @@ const (
 	entryStepConfirm
 )
 
+type fieldDisplayMode int
+
+const (
+	fieldDisplayAll fieldDisplayMode = iota
+	fieldDisplaySymptom
+	fieldDisplayProgram
+	fieldDisplayDistro
+	fieldDisplaySolution
+)
+
 type model struct {
 	state  state
 	cursor int
@@ -80,6 +90,10 @@ type model struct {
 	textCursor  int
 	charCursor  int // Position within current line
 
+	// Search results display state
+	displayMode  fieldDisplayMode
+	scrollOffset int // For scrolling individual field content
+
 	// UI state
 	message   string
 	clipboard string // Internal clipboard for copy/paste
@@ -95,9 +109,11 @@ func initialModel() model {
 			Resources: []string{},
 			Date:      time.Now(),
 		},
-		textLines:  []string{""},
-		textCursor: 0,
-		charCursor: 0,
+		textLines:    []string{""},
+		textCursor:   0,
+		charCursor:   0,
+		displayMode:  fieldDisplayAll,
+		scrollOffset: 0,
 	}
 }
 
@@ -259,13 +275,47 @@ func (m model) updateSearchResults(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.state = stateMenu
 		m.cursor = 0
 	case "up", "k":
-		if m.cursor > 0 {
-			m.cursor--
+		if m.displayMode == fieldDisplayAll {
+			if m.cursor > 0 {
+				m.cursor--
+				m.scrollOffset = 0 // Reset scroll when changing selection
+			}
+		} else {
+			// Scroll up in individual field view
+			if m.scrollOffset > 0 {
+				m.scrollOffset--
+			}
 		}
 	case "down", "j":
-		if m.cursor < len(m.searchResults)-1 {
-			m.cursor++
+		if m.displayMode == fieldDisplayAll {
+			if m.cursor < len(m.searchResults)-1 {
+				m.cursor++
+				m.scrollOffset = 0 // Reset scroll when changing selection
+			}
+		} else {
+			// Scroll down in individual field view - prevent over-scrolling
+			if len(m.searchResults) > 0 && m.cursor < len(m.searchResults) {
+				maxScroll := m.getMaxScrollForCurrentField()
+				if m.scrollOffset < maxScroll {
+					m.scrollOffset++
+				}
+			}
 		}
+	case "s":
+		m.displayMode = fieldDisplaySymptom
+		m.scrollOffset = 0
+	case "p":
+		m.displayMode = fieldDisplayProgram
+		m.scrollOffset = 0
+	case "d":
+		m.displayMode = fieldDisplayDistro
+		m.scrollOffset = 0
+	case "o":
+		m.displayMode = fieldDisplaySolution
+		m.scrollOffset = 0
+	case "a":
+		m.displayMode = fieldDisplayAll
+		m.scrollOffset = 0
 	case "e", "enter":
 		if len(m.searchResults) > 0 && m.cursor < len(m.searchResults) {
 			m.editReport = m.searchResults[m.cursor]
@@ -273,7 +323,7 @@ func (m model) updateSearchResults(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.editStep = entryStepSymptom
 			m.state = stateEditResult
 		}
-	case "d", "delete":
+	case "delete", "x":
 		if len(m.searchResults) > 0 && m.cursor < len(m.searchResults) {
 			selected := m.searchResults[m.cursor]
 			m.deleteTargetID = selected.ID
@@ -817,19 +867,127 @@ func (m model) viewSearchResults() string {
 		if len(m.searchResults) > 0 && m.cursor < len(m.searchResults) {
 			selected := m.searchResults[m.cursor]
 			s += fmt.Sprintf("\n--- Details ---\n")
-			s += fmt.Sprintf("Date: %s\n", selected.Date.Format("2006-01-02"))
-			s += fmt.Sprintf("Program: %s %s\n", selected.Program, selected.ProgramVersion)
-			s += fmt.Sprintf("Distro: %s %s\n", selected.Distro, selected.DistroVersion)
-			s += fmt.Sprintf("Symptom: %s\n", selected.Symptom)
-			if len(selected.Resources) > 0 {
-				s += fmt.Sprintf("Resources: %s\n", strings.Join(selected.Resources, ", "))
+
+			switch m.displayMode {
+			case fieldDisplayAll:
+				s += fmt.Sprintf("Date: %s\n", selected.Date.Format("2006-01-02"))
+				s += fmt.Sprintf("Program: %s %s\n", selected.Program, selected.ProgramVersion)
+				s += fmt.Sprintf("Distro: %s %s\n", selected.Distro, selected.DistroVersion)
+				s += fmt.Sprintf("Symptom: %s\n", selected.Symptom)
+				if len(selected.Resources) > 0 {
+					s += fmt.Sprintf("Resources: %s\n", strings.Join(selected.Resources, ", "))
+				}
+				s += fmt.Sprintf("Solution: %s\n", selected.Solution)
+			case fieldDisplaySymptom:
+				s += fmt.Sprintf("Symptom (scroll: j/k):\n")
+				s += m.renderScrollableField(selected.Symptom)
+			case fieldDisplayProgram:
+				s += fmt.Sprintf("Program (scroll: j/k):\n")
+				programText := fmt.Sprintf("%s %s", selected.Program, selected.ProgramVersion)
+				s += m.renderScrollableField(programText)
+			case fieldDisplayDistro:
+				s += fmt.Sprintf("Distro (scroll: j/k):\n")
+				distroText := fmt.Sprintf("%s %s", selected.Distro, selected.DistroVersion)
+				s += m.renderScrollableField(distroText)
+			case fieldDisplaySolution:
+				s += fmt.Sprintf("Solution (scroll: j/k):\n")
+				s += m.renderScrollableField(selected.Solution)
 			}
-			s += fmt.Sprintf("Solution: %s\n", selected.Solution)
 		}
 	}
 
-	s += "\nPress Enter/e to edit, d to delete, Esc to go back"
+	s += "\nPress s=symptom, p=program, d=distro, o=solution, a=all"
+	s += "\nPress Enter/e to edit, x to delete, Esc to go back"
 	return s
+}
+
+func (m model) renderScrollableField(text string) string {
+	if text == "" {
+		return "(empty)\n"
+	}
+
+	const maxDisplayLines = 10
+	const lineWidth = 70
+
+	// Split text into wrapped lines
+	lines := strings.Split(text, "\n")
+	var wrappedLines []string
+
+	for _, line := range lines {
+		wrapped := wrapLine(line, lineWidth)
+		wrappedLines = append(wrappedLines, wrapped...)
+	}
+
+	// Apply scroll offset
+	startLine := m.scrollOffset
+	if startLine >= len(wrappedLines) {
+		startLine = len(wrappedLines) - 1
+		if startLine < 0 {
+			startLine = 0
+		}
+	}
+
+	endLine := startLine + maxDisplayLines
+	if endLine > len(wrappedLines) {
+		endLine = len(wrappedLines)
+	}
+
+	var result string
+	for i := startLine; i < endLine; i++ {
+		result += wrappedLines[i] + "\n"
+	}
+
+	// Show scroll indicators if there's more content
+	if startLine > 0 {
+		result = "↑ (more above)\n" + result
+	}
+	if endLine < len(wrappedLines) {
+		result += "↓ (more below)\n"
+	}
+
+	return result
+}
+
+func (m model) getMaxScrollForCurrentField() int {
+	if len(m.searchResults) == 0 || m.cursor >= len(m.searchResults) {
+		return 0
+	}
+
+	selected := m.searchResults[m.cursor]
+	var text string
+
+	switch m.displayMode {
+	case fieldDisplaySymptom:
+		text = selected.Symptom
+	case fieldDisplayProgram:
+		text = fmt.Sprintf("%s %s", selected.Program, selected.ProgramVersion)
+	case fieldDisplayDistro:
+		text = fmt.Sprintf("%s %s", selected.Distro, selected.DistroVersion)
+	case fieldDisplaySolution:
+		text = selected.Solution
+	default:
+		return 0
+	}
+
+	const maxDisplayLines = 10
+	const lineWidth = 70
+
+	// Calculate total wrapped lines
+	lines := strings.Split(text, "\n")
+	var totalWrappedLines int
+
+	for _, line := range lines {
+		wrapped := wrapLine(line, lineWidth)
+		totalWrappedLines += len(wrapped)
+	}
+
+	// Max scroll is total lines minus what can be displayed
+	maxScroll := totalWrappedLines - maxDisplayLines
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+
+	return maxScroll
 }
 
 func (m model) viewEntry() string {
