@@ -1,0 +1,5 @@
+A little tool I made to remember what happened the last time I got that wall-of-text error from gcc.
+
+Backed by a meilisearch instance. Check `config.go` for details.
+
+Just run `go run .` and it should be straightforward.
