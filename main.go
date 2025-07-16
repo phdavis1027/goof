@@ -550,6 +550,9 @@ func (m model) updateEntryField(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Move to start of next line
 			m.textCursor++
 			m.charCursor = 0
+		} else {
+			// Jump to end of current line if trying to go past it
+			m.charCursor = len(m.textLines[m.textCursor])
 		}
 	case "home":
 		m.charCursor = 0
@@ -661,6 +664,9 @@ func (m model) updateEditResultField(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Move to start of next line
 			m.textCursor++
 			m.charCursor = 0
+		} else {
+			// Jump to end of current line if trying to go past it
+			m.charCursor = len(m.textLines[m.textCursor])
 		}
 	case "home":
 		m.charCursor = 0
@@ -884,12 +890,20 @@ func (m model) viewEntryField() string {
 					lineCursor = "|"
 				}
 				// Show cursor position within the line
-				if j == 0 && m.charCursor <= len(wrappedLine) {
+				// Calculate cursor position relative to wrapped lines
+				cursorPos := m.charCursor
+				for k := 0; k < j; k++ {
+					if k < len(wrappedLines)-1 {
+						cursorPos -= len(wrappedLines[k])
+					}
+				}
+
+				if cursorPos >= 0 && cursorPos <= len(wrappedLine) {
 					// Insert cursor marker
-					if m.charCursor == len(wrappedLine) {
+					if cursorPos == len(wrappedLine) {
 						wrappedLine += "█"
 					} else {
-						wrappedLine = wrappedLine[:m.charCursor] + "█" + wrappedLine[m.charCursor:]
+						wrappedLine = wrappedLine[:cursorPos] + "█" + wrappedLine[cursorPos:]
 					}
 				}
 			}
@@ -980,12 +994,20 @@ func (m model) viewEditResultField() string {
 					lineCursor = "|"
 				}
 				// Show cursor position within the line
-				if j == 0 && m.charCursor <= len(wrappedLine) {
+				// Calculate cursor position relative to wrapped lines
+				cursorPos := m.charCursor
+				for k := 0; k < j; k++ {
+					if k < len(wrappedLines)-1 {
+						cursorPos -= len(wrappedLines[k])
+					}
+				}
+
+				if cursorPos >= 0 && cursorPos <= len(wrappedLine) {
 					// Insert cursor marker
-					if m.charCursor == len(wrappedLine) {
+					if cursorPos == len(wrappedLine) {
 						wrappedLine += "█"
 					} else {
-						wrappedLine = wrappedLine[:m.charCursor] + "█" + wrappedLine[m.charCursor:]
+						wrappedLine = wrappedLine[:cursorPos] + "█" + wrappedLine[cursorPos:]
 					}
 				}
 			}
