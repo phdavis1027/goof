@@ -65,9 +65,9 @@ type model struct {
 	currentReport ErrorReport
 
 	// Edit state
-	editStep      entryStep
-	editReport    ErrorReport
-	originalID    string
+	editStep   entryStep
+	editReport ErrorReport
+	originalID string
 
 	// Delete confirmation state
 	deleteConfirmCursor int
@@ -462,8 +462,11 @@ func (m model) updateDeleteConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.message = fmt.Sprintf("Error deleting report: %v", err)
 			} else {
 				m.message = "Report deleted successfully!"
-				results, _ := SearchErrorReports(m.filter)
-				m.searchResults = results
+				// Remove the deleted item from the local search results
+				if m.cursor < len(m.searchResults) {
+					m.searchResults = append(m.searchResults[:m.cursor], m.searchResults[m.cursor+1:]...)
+				}
+				// Adjust cursor position if necessary
 				if m.cursor >= len(m.searchResults) && len(m.searchResults) > 0 {
 					m.cursor = len(m.searchResults) - 1
 				}
@@ -1058,12 +1061,12 @@ func (m model) viewDeleteConfirm() string {
 	s := "Delete Error Report\n\n"
 	s += fmt.Sprintf("Are you sure you want to delete this report?\n\n")
 	s += fmt.Sprintf("Report: %s\n\n", m.deleteTargetName)
-	
+
 	options := []string{
 		"Yes, delete it",
 		"No, cancel",
 	}
-	
+
 	for i, option := range options {
 		cursor := " "
 		if m.deleteConfirmCursor == i {
@@ -1071,7 +1074,7 @@ func (m model) viewDeleteConfirm() string {
 		}
 		s += fmt.Sprintf("%s %s\n", cursor, option)
 	}
-	
+
 	s += "\nPress Enter to select, Esc to cancel"
 	return s
 }
