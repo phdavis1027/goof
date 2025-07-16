@@ -22,6 +22,7 @@ const (
 	stateEntryField
 	stateEditResult
 	stateEditResultField
+	stateDeleteConfirm
 )
 
 type searchStep int
@@ -67,6 +68,11 @@ type model struct {
 	editStep      entryStep
 	editReport    ErrorReport
 	originalID    string
+
+	// Delete confirmation state
+	deleteConfirmCursor int
+	deleteTargetID      string
+	deleteTargetName    string
 
 	// Multi-line text editing
 	currentText string
@@ -117,6 +123,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateEditResult(msg)
 		case stateEditResultField:
 			return m.updateEditResultField(msg)
+		case stateDeleteConfirm:
+			return m.updateDeleteConfirm(msg)
 		}
 	}
 	return m, nil
@@ -264,6 +272,14 @@ func (m model) updateSearchResults(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.originalID = m.editReport.ID
 			m.editStep = entryStepSymptom
 			m.state = stateEditResult
+		}
+	case "d", "delete":
+		if len(m.searchResults) > 0 && m.cursor < len(m.searchResults) {
+			selected := m.searchResults[m.cursor]
+			m.deleteTargetID = selected.ID
+			m.deleteTargetName = fmt.Sprintf("%s - %s", selected.Program, getFirstLine(selected.Symptom))
+			m.deleteConfirmCursor = 0
+			m.state = stateDeleteConfirm
 		}
 	}
 	return m, nil
@@ -424,6 +440,43 @@ func (m *model) setEditFieldText(text string) {
 	case entryStepSolution:
 		m.editReport.Solution = text
 	}
+}
+
+func (m model) updateDeleteConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.state = stateSearchResults
+	case "up", "k":
+		if m.deleteConfirmCursor > 0 {
+			m.deleteConfirmCursor--
+		}
+	case "down", "j":
+		if m.deleteConfirmCursor < 1 {
+			m.deleteConfirmCursor++
+		}
+	case "enter":
+		switch m.deleteConfirmCursor {
+		case 0:
+			err := DeleteErrorReport(m.deleteTargetID)
+			if err != nil {
+				m.message = fmt.Sprintf("Error deleting report: %v", err)
+			} else {
+				m.message = "Report deleted successfully!"
+				results, _ := SearchErrorReports(m.filter)
+				m.searchResults = results
+				if m.cursor >= len(m.searchResults) && len(m.searchResults) > 0 {
+					m.cursor = len(m.searchResults) - 1
+				}
+				if len(m.searchResults) == 0 {
+					m.cursor = 0
+				}
+			}
+			m.state = stateSearchResults
+		case 1:
+			m.state = stateSearchResults
+		}
+	}
+	return m, nil
 }
 
 func (m model) updateEntryField(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -664,6 +717,8 @@ func (m model) View() string {
 		return m.viewEditResult()
 	case stateEditResultField:
 		return m.viewEditResultField()
+	case stateDeleteConfirm:
+		return m.viewDeleteConfirm()
 	}
 	return ""
 }
@@ -764,7 +819,7 @@ func (m model) viewSearchResults() string {
 		}
 	}
 
-	s += "\nPress Enter/e to edit, Esc to go back"
+	s += "\nPress Enter/e to edit, d to delete, Esc to go back"
 	return s
 }
 
@@ -997,6 +1052,28 @@ func (m *model) getFromSystemClipboard() string {
 		return ""
 	}
 	return strings.TrimSpace(string(out))
+}
+
+func (m model) viewDeleteConfirm() string {
+	s := "Delete Error Report\n\n"
+	s += fmt.Sprintf("Are you sure you want to delete this report?\n\n")
+	s += fmt.Sprintf("Report: %s\n\n", m.deleteTargetName)
+	
+	options := []string{
+		"Yes, delete it",
+		"No, cancel",
+	}
+	
+	for i, option := range options {
+		cursor := " "
+		if m.deleteConfirmCursor == i {
+			cursor = ">"
+		}
+		s += fmt.Sprintf("%s %s\n", cursor, option)
+	}
+	
+	s += "\nPress Enter to select, Esc to cancel"
+	return s
 }
 
 // wrapLine wraps a line to fit within the specified width

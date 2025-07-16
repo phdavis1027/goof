@@ -198,6 +198,25 @@ func getStringArray(m map[string]interface{}, key string) []string {
 	return []string{}
 }
 
+func DeleteErrorReport(id string) error {
+	config := LoadConfig()
+	logToFile("DEBUG: DeleteErrorReport - Creating Meilisearch client with URL: %s, Key: '%s' (len=%d)\n",
+		config.MeilisearchURL, config.MeilisearchKey, len(config.MeilisearchKey))
+
+	logToFile("Deleting report with ID: %s\n", id)
+
+	client := meilisearch.New(config.MeilisearchURL, meilisearch.WithAPIKey(config.MeilisearchKey))
+	index := client.Index(config.IndexName)
+
+	// Delete the document from Meilisearch
+	_, err := index.DeleteDocument(id)
+	if err != nil {
+		return fmt.Errorf("failed to delete error report: %w", err)
+	}
+
+	return nil
+}
+
 func InitializeIndexIfNeeded() error {
 	config := LoadConfig()
 	client := meilisearch.New(config.MeilisearchURL, meilisearch.WithAPIKey(config.MeilisearchKey))
