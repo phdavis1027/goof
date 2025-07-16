@@ -85,6 +85,7 @@ func SearchErrorReports(filter Filter) ([]ErrorReport, error) {
 		}
 
 		report := ErrorReport{
+			ID:             getString(hitMap, "id"),
 			Symptom:        getString(hitMap, "symptom"),
 			Program:        getString(hitMap, "program"),
 			ProgramVersion: getString(hitMap, "program_version"),
@@ -136,6 +137,38 @@ func SaveErrorReport(report ErrorReport) error {
 	_, err := index.AddDocuments([]map[string]interface{}{document})
 	if err != nil {
 		return fmt.Errorf("failed to save error report: %w", err)
+	}
+
+	return nil
+}
+
+func UpdateErrorReport(report ErrorReport, originalID string) error {
+	config := LoadConfig()
+	logToFile("DEBUG: UpdateErrorReport - Creating Meilisearch client with URL: %s, Key: '%s' (len=%d)\n",
+		config.MeilisearchURL, config.MeilisearchKey, len(config.MeilisearchKey))
+
+	logToFile("Updating report with ID: %s, %+v\n", originalID, report)
+
+	client := meilisearch.New(config.MeilisearchURL, meilisearch.WithAPIKey(config.MeilisearchKey))
+	index := client.Index(config.IndexName)
+
+	// Create updated document with same ID
+	document := map[string]interface{}{
+		"id":              originalID,
+		"symptom":         report.Symptom,
+		"date":            report.Date.Unix(), // Store as Unix timestamp for filtering
+		"program":         report.Program,
+		"program_version": report.ProgramVersion,
+		"distro":          report.Distro,
+		"distro_version":  report.DistroVersion,
+		"resources":       report.Resources,
+		"solution":        report.Solution,
+	}
+
+	// Update the document (Meilisearch will replace the existing document with the same ID)
+	_, err := index.AddDocuments([]map[string]interface{}{document})
+	if err != nil {
+		return fmt.Errorf("failed to update error report: %w", err)
 	}
 
 	return nil

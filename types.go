@@ -3,6 +3,7 @@ package main
 import "time"
 
 type ErrorReport struct {
+	ID             string    `json:"id,omitempty"`
 	Symptom        string    `json:"symptom"`
 	Date           time.Time `json:"date"`
 	Program        string    `json:"program"`
