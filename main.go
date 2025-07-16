@@ -49,27 +49,27 @@ const (
 )
 
 type model struct {
-	state         state
-	cursor        int
-	
+	state  state
+	cursor int
+
 	// Search state
 	searchStep    searchStep
 	filter        Filter
 	searchResults []ErrorReport
-	
+
 	// Entry state
 	entryStep     entryStep
 	currentReport ErrorReport
-	
+
 	// Multi-line text editing
-	currentText   string
-	textLines     []string
-	textCursor    int
-	charCursor    int // Position within current line
-	
+	currentText string
+	textLines   []string
+	textCursor  int
+	charCursor  int // Position within current line
+
 	// UI state
-	message       string
-	clipboard     string // Internal clipboard for copy/paste
+	message   string
+	clipboard string // Internal clipboard for copy/paste
 }
 
 func initialModel() model {
@@ -82,7 +82,7 @@ func initialModel() model {
 			Resources: []string{},
 			Date:      time.Now(),
 		},
-		textLines: []string{""},
+		textLines:  []string{""},
 		textCursor: 0,
 		charCursor: 0,
 	}
@@ -459,16 +459,16 @@ func (m model) View() string {
 
 func (m model) viewMenu() string {
 	s := "Error Report Manager\n\n"
-	
+
 	if m.message != "" {
 		s += fmt.Sprintf("✓ %s\n\n", m.message)
 	}
-	
+
 	options := []string{
 		"Search Error Reports",
 		"Enter New Error Report",
 	}
-	
+
 	for i, option := range options {
 		cursor := " "
 		if m.cursor == i {
@@ -476,14 +476,14 @@ func (m model) viewMenu() string {
 		}
 		s += fmt.Sprintf("%s %s\n", cursor, option)
 	}
-	
+
 	s += "\nPress q to quit"
 	return s
 }
 
 func (m model) viewSearch() string {
 	s := "Search Error Reports\n\n"
-	
+
 	fields := []struct {
 		label string
 		value string
@@ -497,7 +497,7 @@ func (m model) viewSearch() string {
 		{"Distro Version", m.filter.DistroVersion, searchStepDistroVersion},
 		{"Solution", m.filter.Solution, searchStepSolution},
 	}
-	
+
 	for _, field := range fields {
 		cursor := " "
 		if m.searchStep == field.step {
@@ -505,20 +505,29 @@ func (m model) viewSearch() string {
 		}
 		s += fmt.Sprintf("%s %s: %s\n", cursor, field.label, field.value)
 	}
-	
+
 	cursor := " "
 	if m.searchStep == searchStepExecute {
 		cursor = ">"
 	}
 	s += fmt.Sprintf("%s Execute Search\n", cursor)
-	
+
 	s += "\nPress Enter to select, Tab/Shift+Tab to navigate, Esc to go back"
 	return s
 }
 
+// getFirstLine extracts the first line of a multi-line string
+func getFirstLine(text string) string {
+	lines := strings.Split(text, "\n")
+	if len(lines) > 0 {
+		return lines[0]
+	}
+	return text
+}
+
 func (m model) viewSearchResults() string {
 	s := "Search Results\n\n"
-	
+
 	if len(m.searchResults) == 0 {
 		s += "No results found"
 	} else {
@@ -527,9 +536,9 @@ func (m model) viewSearchResults() string {
 			if m.cursor == i {
 				cursor = ">"
 			}
-			s += fmt.Sprintf("%s %s - %s\n", cursor, result.Program, result.Symptom)
+			s += fmt.Sprintf("%s %s - %s\n", cursor, result.Program, getFirstLine(result.Symptom))
 		}
-		
+
 		if len(m.searchResults) > 0 && m.cursor < len(m.searchResults) {
 			selected := m.searchResults[m.cursor]
 			s += fmt.Sprintf("\n--- Details ---\n")
@@ -543,14 +552,14 @@ func (m model) viewSearchResults() string {
 			s += fmt.Sprintf("Solution: %s\n", selected.Solution)
 		}
 	}
-	
+
 	s += "\nPress Esc to go back"
 	return s
 }
 
 func (m model) viewEntry() string {
 	s := "Enter New Error Report\n\n"
-	
+
 	fields := []struct {
 		label string
 		value string
@@ -564,7 +573,7 @@ func (m model) viewEntry() string {
 		{"Resources", strings.Join(m.currentReport.Resources, ", "), entryStepResources},
 		{"Solution", m.currentReport.Solution, entryStepSolution},
 	}
-	
+
 	for _, field := range fields {
 		cursor := " "
 		if m.entryStep == field.step {
@@ -576,13 +585,13 @@ func (m model) viewEntry() string {
 		}
 		s += fmt.Sprintf("%s %s: %s\n", cursor, field.label, displayValue)
 	}
-	
+
 	cursor := " "
 	if m.entryStep == entryStepConfirm {
 		cursor = ">"
 	}
 	s += fmt.Sprintf("%s Save Report\n", cursor)
-	
+
 	s += "\nPress Enter to edit field, Tab/Shift+Tab to navigate, Esc to go back"
 	return s
 }
@@ -590,13 +599,13 @@ func (m model) viewEntry() string {
 func (m model) viewEntryField() string {
 	fieldName := m.getCurrentFieldName()
 	s := fmt.Sprintf("Edit %s\n\n", fieldName)
-	
+
 	const lineWidth = 70 // Maximum line width before wrapping
-	
+
 	for i, line := range m.textLines {
 		// Wrap long lines for display
 		wrappedLines := wrapLine(line, lineWidth)
-		
+
 		for j, wrappedLine := range wrappedLines {
 			lineCursor := " "
 			if i == m.textCursor {
@@ -618,7 +627,7 @@ func (m model) viewEntryField() string {
 			s += fmt.Sprintf("%s %s\n", lineCursor, wrappedLine)
 		}
 	}
-	
+
 	s += "\nPress Ctrl+S to save, Esc to cancel, Enter for new line"
 	s += "\nArrow keys to navigate, Ctrl+C to copy line, Ctrl+V to paste"
 	return s
@@ -657,7 +666,7 @@ func (m *model) copyToSystemClipboard(text string) {
 	default:
 		return // Unsupported OS
 	}
-	
+
 	cmd.Stdin = strings.NewReader(text)
 	cmd.Run() // Ignore errors for now
 }
@@ -675,7 +684,7 @@ func (m *model) getFromSystemClipboard() string {
 	default:
 		return "" // Unsupported OS
 	}
-	
+
 	out, err := cmd.Output()
 	if err != nil {
 		return ""
@@ -688,11 +697,11 @@ func wrapLine(line string, width int) []string {
 	if width <= 0 {
 		return []string{line}
 	}
-	
+
 	if len(line) <= width {
 		return []string{line}
 	}
-	
+
 	var wrapped []string
 	for len(line) > width {
 		// Try to break at word boundary
@@ -703,22 +712,22 @@ func wrapLine(line string, width int) []string {
 				break
 			}
 		}
-		
+
 		wrapped = append(wrapped, strings.TrimSpace(line[:breakPoint]))
 		line = strings.TrimSpace(line[breakPoint:])
 	}
-	
+
 	if len(line) > 0 {
 		wrapped = append(wrapped, line)
 	}
-	
+
 	return wrapped
 }
 
 func main() {
 	initIndex := flag.Bool("init-index", false, "Initialize Meilisearch index with proper attributes")
 	flag.Parse()
-	
+
 	if *initIndex {
 		logToFile("Initializing Meilisearch index...\n")
 		if err := InitializeIndexIfNeeded(); err != nil {
@@ -728,7 +737,7 @@ func main() {
 		logToFile("Index initialized successfully!\n")
 		return
 	}
-	
+
 	p := tea.NewProgram(initialModel())
 	if _, err := p.Run(); err != nil {
 		logToFile("Error: %v", err)

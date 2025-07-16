@@ -3,3 +3,7 @@ A little tool I made to remember what happened the last time I got that wall-of-
 Backed by a meilisearch instance. Check `config.go` for details.
 
 Just run `go run .` and it should be straightforward.
+
+# Trivia
+
+- When viewing the results of your search, only the first line will be displayed per hit (like a commit message in git)

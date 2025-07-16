@@ -10,20 +10,20 @@ import (
 
 func SearchErrorReports(filter Filter) ([]ErrorReport, error) {
 	config := LoadConfig()
-	logToFile("DEBUG: SearchErrorReports - Creating Meilisearch client with URL: %s, Key: '%s' (len=%d)\n", 
+	logToFile("DEBUG: SearchErrorReports - Creating Meilisearch client with URL: %s, Key: '%s' (len=%d)\n",
 		config.MeilisearchURL, config.MeilisearchKey, len(config.MeilisearchKey))
-	
+
 	client := meilisearch.New(config.MeilisearchURL, meilisearch.WithAPIKey(config.MeilisearchKey))
 	index := client.Index(config.IndexName)
-	
+
 	// Build search query for full-text search
 	var queryParts []string
-	
+
 	// Add general query if provided
 	if filter.Q != "" {
 		queryParts = append(queryParts, filter.Q)
 	}
-	
+
 	// Add specific field searches to the query
 	if filter.Symptom != "" {
 		queryParts = append(queryParts, filter.Symptom)
@@ -43,13 +43,13 @@ func SearchErrorReports(filter Filter) ([]ErrorReport, error) {
 	if filter.Solution != "" {
 		queryParts = append(queryParts, filter.Solution)
 	}
-	
+
 	// Combine all query parts
 	searchQuery := strings.Join(queryParts, " ")
-	
+
 	// Build filter expressions (only for non-text fields like dates and exact matches)
 	var filters []string
-	
+
 	if filter.DateFrom != nil {
 		filters = append(filters, fmt.Sprintf("date >= %d", filter.DateFrom.Unix()))
 	}
@@ -77,14 +77,13 @@ func SearchErrorReports(filter Filter) ([]ErrorReport, error) {
 		return nil, fmt.Errorf("failed to search: %w", err)
 	}
 
-
 	var reports []ErrorReport
 	for _, hit := range searchResponse.Hits {
 		hitMap, ok := hit.(map[string]interface{})
 		if !ok {
 			continue
 		}
-		
+
 		report := ErrorReport{
 			Symptom:        getString(hitMap, "symptom"),
 			Program:        getString(hitMap, "program"),
@@ -94,14 +93,14 @@ func SearchErrorReports(filter Filter) ([]ErrorReport, error) {
 			Solution:       getString(hitMap, "solution"),
 			Resources:      getStringArray(hitMap, "resources"),
 		}
-		
+
 		// Convert Unix timestamp back to time.Time
 		if dateField, ok := hitMap["date"]; ok {
 			if dateFloat, ok := dateField.(float64); ok {
 				report.Date = time.Unix(int64(dateFloat), 0)
 			}
 		}
-		
+
 		reports = append(reports, report)
 	}
 
@@ -110,17 +109,17 @@ func SearchErrorReports(filter Filter) ([]ErrorReport, error) {
 
 func SaveErrorReport(report ErrorReport) error {
 	config := LoadConfig()
-	logToFile("DEBUG: SaveErrorReport - Creating Meilisearch client with URL: %s, Key: '%s' (len=%d)\n", 
+	logToFile("DEBUG: SaveErrorReport - Creating Meilisearch client with URL: %s, Key: '%s' (len=%d)\n",
 		config.MeilisearchURL, config.MeilisearchKey, len(config.MeilisearchKey))
-	
-	logToFile("%+v\n", report);
+
+	logToFile("%+v\n", report)
 
 	client := meilisearch.New(config.MeilisearchURL, meilisearch.WithAPIKey(config.MeilisearchKey))
 	index := client.Index(config.IndexName)
-	
+
 	// Generate unique ID based on timestamp and program
 	id := fmt.Sprintf("%d-%s", time.Now().UnixNano(), report.Program)
-	
+
 	// Create document with ID
 	document := map[string]interface{}{
 		"id":              id,
@@ -170,7 +169,7 @@ func InitializeIndexIfNeeded() error {
 	config := LoadConfig()
 	client := meilisearch.New(config.MeilisearchURL, meilisearch.WithAPIKey(config.MeilisearchKey))
 	index := client.Index(config.IndexName)
-	
+
 	// Define searchable attributes for full-text search
 	searchableAttributes := []string{
 		"symptom",
@@ -180,24 +179,24 @@ func InitializeIndexIfNeeded() error {
 		"distro_version",
 		"solution",
 	}
-	
+
 	// Define filterable attributes for exact filtering (dates, resources)
 	filterableAttributes := []string{
 		"date",
 		"resources",
 	}
-	
+
 	// Update searchable attributes
 	_, err := index.UpdateSearchableAttributes(&searchableAttributes)
 	if err != nil {
 		return fmt.Errorf("failed to update searchable attributes: %w", err)
 	}
-	
+
 	// Update filterable attributes
 	_, err = index.UpdateFilterableAttributes(&filterableAttributes)
 	if err != nil {
 		return fmt.Errorf("failed to update filterable attributes: %w", err)
 	}
-	
+
 	return nil
 }
