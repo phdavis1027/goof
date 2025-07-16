@@ -10,6 +10,9 @@ import (
 
 func SearchErrorReports(filter Filter) ([]ErrorReport, error) {
 	config := LoadConfig()
+	logToFile("DEBUG: SearchErrorReports - Creating Meilisearch client with URL: %s, Key: '%s' (len=%d)\n", 
+		config.MeilisearchURL, config.MeilisearchKey, len(config.MeilisearchKey))
+	
 	client := meilisearch.New(config.MeilisearchURL, meilisearch.WithAPIKey(config.MeilisearchKey))
 	index := client.Index(config.IndexName)
 	
@@ -107,6 +110,11 @@ func SearchErrorReports(filter Filter) ([]ErrorReport, error) {
 
 func SaveErrorReport(report ErrorReport) error {
 	config := LoadConfig()
+	logToFile("DEBUG: SaveErrorReport - Creating Meilisearch client with URL: %s, Key: '%s' (len=%d)\n", 
+		config.MeilisearchURL, config.MeilisearchKey, len(config.MeilisearchKey))
+	
+	logToFile("%+v\n", report);
+
 	client := meilisearch.New(config.MeilisearchURL, meilisearch.WithAPIKey(config.MeilisearchKey))
 	index := client.Index(config.IndexName)
 	

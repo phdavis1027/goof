@@ -4,6 +4,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -63,9 +65,11 @@ type model struct {
 	currentText   string
 	textLines     []string
 	textCursor    int
+	charCursor    int // Position within current line
 	
 	// UI state
 	message       string
+	clipboard     string // Internal clipboard for copy/paste
 }
 
 func initialModel() model {
@@ -80,6 +84,7 @@ func initialModel() model {
 		},
 		textLines: []string{""},
 		textCursor: 0,
+		charCursor: 0,
 	}
 }
 
@@ -265,6 +270,7 @@ func (m model) updateEntry(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.textLines = []string{""}
 			}
 			m.textCursor = 0
+			m.charCursor = 0
 		}
 	case "tab":
 		if m.entryStep < entryStepConfirm {
@@ -332,29 +338,104 @@ func (m model) updateEntryField(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		text := strings.Join(m.textLines, "\n")
 		m.setCurrentFieldText(text)
 		m.state = stateEntry
+	case "ctrl+c":
+		// Copy current line to clipboard
+		if m.textCursor < len(m.textLines) {
+			m.clipboard = m.textLines[m.textCursor]
+			m.copyToSystemClipboard(m.clipboard)
+		}
+	case "ctrl+v":
+		// Paste from clipboard
+		clipText := m.getFromSystemClipboard()
+		if clipText != "" {
+			m.clipboard = clipText
+		}
+		if m.clipboard != "" {
+			// Insert clipboard content at current cursor position
+			currentLine := m.textLines[m.textCursor]
+			newLine := currentLine[:m.charCursor] + m.clipboard + currentLine[m.charCursor:]
+			m.textLines[m.textCursor] = newLine
+			m.charCursor += len(m.clipboard)
+		}
 	case "enter":
-		// currentLine := m.textLines[m.textCursor]
+		// Split current line at cursor position
+		currentLine := m.textLines[m.textCursor]
+		leftPart := currentLine[:m.charCursor]
+		rightPart := currentLine[m.charCursor:]
+		m.textLines[m.textCursor] = leftPart
 		m.textLines = append(m.textLines[:m.textCursor+1], m.textLines[m.textCursor:]...)
-		m.textLines[m.textCursor+1] = ""
+		m.textLines[m.textCursor+1] = rightPart
 		m.textCursor++
+		m.charCursor = 0
 	case "up":
 		if m.textCursor > 0 {
 			m.textCursor--
+			// Keep char cursor within bounds of new line
+			if m.charCursor > len(m.textLines[m.textCursor]) {
+				m.charCursor = len(m.textLines[m.textCursor])
+			}
 		}
 	case "down":
 		if m.textCursor < len(m.textLines)-1 {
 			m.textCursor++
+			// Keep char cursor within bounds of new line
+			if m.charCursor > len(m.textLines[m.textCursor]) {
+				m.charCursor = len(m.textLines[m.textCursor])
+			}
 		}
-	case "backspace":
-		if len(m.textLines[m.textCursor]) > 0 {
-			m.textLines[m.textCursor] = m.textLines[m.textCursor][:len(m.textLines[m.textCursor])-1]
+	case "left":
+		if m.charCursor > 0 {
+			m.charCursor--
 		} else if m.textCursor > 0 {
+			// Move to end of previous line
+			m.textCursor--
+			m.charCursor = len(m.textLines[m.textCursor])
+		}
+	case "right":
+		if m.charCursor < len(m.textLines[m.textCursor]) {
+			m.charCursor++
+		} else if m.textCursor < len(m.textLines)-1 {
+			// Move to start of next line
+			m.textCursor++
+			m.charCursor = 0
+		}
+	case "home":
+		m.charCursor = 0
+	case "end":
+		m.charCursor = len(m.textLines[m.textCursor])
+	case "backspace":
+		if m.charCursor > 0 {
+			// Remove character before cursor
+			currentLine := m.textLines[m.textCursor]
+			m.textLines[m.textCursor] = currentLine[:m.charCursor-1] + currentLine[m.charCursor:]
+			m.charCursor--
+		} else if m.textCursor > 0 {
+			// Join with previous line
+			prevLine := m.textLines[m.textCursor-1]
+			currentLine := m.textLines[m.textCursor]
+			m.textLines[m.textCursor-1] = prevLine + currentLine
 			m.textLines = append(m.textLines[:m.textCursor], m.textLines[m.textCursor+1:]...)
 			m.textCursor--
+			m.charCursor = len(prevLine)
+		}
+	case "delete":
+		if m.charCursor < len(m.textLines[m.textCursor]) {
+			// Remove character at cursor
+			currentLine := m.textLines[m.textCursor]
+			m.textLines[m.textCursor] = currentLine[:m.charCursor] + currentLine[m.charCursor+1:]
+		} else if m.textCursor < len(m.textLines)-1 {
+			// Join with next line
+			currentLine := m.textLines[m.textCursor]
+			nextLine := m.textLines[m.textCursor+1]
+			m.textLines[m.textCursor] = currentLine + nextLine
+			m.textLines = append(m.textLines[:m.textCursor+1], m.textLines[m.textCursor+2:]...)
 		}
 	default:
 		if len(msg.String()) == 1 {
-			m.textLines[m.textCursor] += msg.String()
+			// Insert character at cursor position
+			currentLine := m.textLines[m.textCursor]
+			m.textLines[m.textCursor] = currentLine[:m.charCursor] + msg.String() + currentLine[m.charCursor:]
+			m.charCursor++
 		}
 	}
 	return m, nil
@@ -510,15 +591,36 @@ func (m model) viewEntryField() string {
 	fieldName := m.getCurrentFieldName()
 	s := fmt.Sprintf("Edit %s\n\n", fieldName)
 	
+	const lineWidth = 70 // Maximum line width before wrapping
+	
 	for i, line := range m.textLines {
-		cursor := " "
-		if i == m.textCursor {
-			cursor = ">"
+		// Wrap long lines for display
+		wrappedLines := wrapLine(line, lineWidth)
+		
+		for j, wrappedLine := range wrappedLines {
+			lineCursor := " "
+			if i == m.textCursor {
+				if j == 0 {
+					lineCursor = ">"
+				} else {
+					lineCursor = "|"
+				}
+				// Show cursor position within the line
+				if j == 0 && m.charCursor <= len(wrappedLine) {
+					// Insert cursor marker
+					if m.charCursor == len(wrappedLine) {
+						wrappedLine += "█"
+					} else {
+						wrappedLine = wrappedLine[:m.charCursor] + "█" + wrappedLine[m.charCursor:]
+					}
+				}
+			}
+			s += fmt.Sprintf("%s %s\n", lineCursor, wrappedLine)
 		}
-		s += fmt.Sprintf("%s %s\n", cursor, line)
 	}
 	
-	s += "\nPress Ctrl+S to save, Esc to cancel, Enter for new line, Up/Down to navigate"
+	s += "\nPress Ctrl+S to save, Esc to cancel, Enter for new line"
+	s += "\nArrow keys to navigate, Ctrl+C to copy line, Ctrl+V to paste"
 	return s
 }
 
@@ -542,23 +644,94 @@ func (m model) getCurrentFieldName() string {
 	return ""
 }
 
+// copyToSystemClipboard copies text to system clipboard
+func (m *model) copyToSystemClipboard(text string) {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "linux":
+		cmd = exec.Command("xclip", "-selection", "clipboard")
+	case "darwin":
+		cmd = exec.Command("pbcopy")
+	case "windows":
+		cmd = exec.Command("clip")
+	default:
+		return // Unsupported OS
+	}
+	
+	cmd.Stdin = strings.NewReader(text)
+	cmd.Run() // Ignore errors for now
+}
+
+// getFromSystemClipboard gets text from system clipboard
+func (m *model) getFromSystemClipboard() string {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "linux":
+		cmd = exec.Command("xclip", "-selection", "clipboard", "-o")
+	case "darwin":
+		cmd = exec.Command("pbpaste")
+	case "windows":
+		cmd = exec.Command("powershell", "-command", "Get-Clipboard")
+	default:
+		return "" // Unsupported OS
+	}
+	
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// wrapLine wraps a line to fit within the specified width
+func wrapLine(line string, width int) []string {
+	if width <= 0 {
+		return []string{line}
+	}
+	
+	if len(line) <= width {
+		return []string{line}
+	}
+	
+	var wrapped []string
+	for len(line) > width {
+		// Try to break at word boundary
+		breakPoint := width
+		for i := width - 1; i >= 0; i-- {
+			if line[i] == ' ' {
+				breakPoint = i
+				break
+			}
+		}
+		
+		wrapped = append(wrapped, strings.TrimSpace(line[:breakPoint]))
+		line = strings.TrimSpace(line[breakPoint:])
+	}
+	
+	if len(line) > 0 {
+		wrapped = append(wrapped, line)
+	}
+	
+	return wrapped
+}
+
 func main() {
 	initIndex := flag.Bool("init-index", false, "Initialize Meilisearch index with proper attributes")
 	flag.Parse()
 	
 	if *initIndex {
-		fmt.Println("Initializing Meilisearch index...")
+		logToFile("Initializing Meilisearch index...\n")
 		if err := InitializeIndexIfNeeded(); err != nil {
-			fmt.Printf("Error initializing index: %v\n", err)
+			logToFile("Error initializing index: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Println("Index initialized successfully!")
+		logToFile("Index initialized successfully!\n")
 		return
 	}
 	
 	p := tea.NewProgram(initialModel())
 	if _, err := p.Run(); err != nil {
-		fmt.Printf("Error: %v", err)
+		logToFile("Error: %v", err)
 		os.Exit(1)
 	}
 }
