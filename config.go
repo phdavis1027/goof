@@ -5,6 +5,11 @@ import (
 	"os"
 )
 
+var (
+	debugEnabled bool
+	debugLogFile string
+)
+
 type Config struct {
 	MeilisearchURL string
 	MeilisearchKey string
@@ -38,8 +43,17 @@ func getEnvOrDefault(key, defaultValue string) string {
 	return defaultValue
 }
 
+func initDebugLogging(enabled bool, logFile string) {
+	debugEnabled = enabled
+	debugLogFile = logFile
+}
+
 func logToFile(format string, args ...interface{}) {
-	file, err := os.OpenFile("errors.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if !debugEnabled {
+		return
+	}
+
+	file, err := os.OpenFile(debugLogFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		log.Printf("Error opening log file: %v", err)
 		return

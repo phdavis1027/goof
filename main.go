@@ -726,7 +726,12 @@ func wrapLine(line string, width int) []string {
 
 func main() {
 	initIndex := flag.Bool("init-index", false, "Initialize Meilisearch index with proper attributes")
+	debugMode := flag.Bool("debug", false, "Enable debug logging")
+	logFile := flag.String("log-file", "errors.log", "File to write debug logs to")
 	flag.Parse()
+
+	// Initialize debug logging with the provided flags
+	initDebugLogging(*debugMode, *logFile)
 
 	if *initIndex {
 		logToFile("Initializing Meilisearch index...\n")
